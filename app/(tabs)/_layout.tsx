@@ -1,58 +1,84 @@
-import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Link, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
+  name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   color: string;
 }) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
+  return <MaterialCommunityIcons size={26} style={{ marginBottom: -2 }} {...props} />;
 }
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'dark'];
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
+        tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: colors.tabIconDefault,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+        },
+        headerStyle: {
+          backgroundColor: colors.surface,
+          borderBottomColor: colors.border,
+        },
+        headerTintColor: colors.text,
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
+          headerShown: true,
+          headerTitle: 'Workout Time',
+        }}
+      />
+      <Tabs.Screen
+        name="workouts"
+        options={{
+          title: 'Workouts',
+          tabBarIcon: ({ color }) => <TabBarIcon name="dumbbell" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="exercises"
+        options={{
+          title: 'Exercises',
+          tabBarIcon: ({ color }) => <TabBarIcon name="format-list-bulleted" color={color} />,
           headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
+            <Link href="/add-exercise" asChild>
+              <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginRight: 16 })}>
+                <MaterialCommunityIcons name="plus" size={26} color={colors.tint} />
               </Pressable>
             </Link>
           ),
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="timer"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'Timer',
+          tabBarIcon: ({ color }) => <TabBarIcon name="timer-outline" color={color} />,
         }}
+      />
+      <Tabs.Screen
+        name="progress"
+        options={{
+          title: 'Progress',
+          tabBarIcon: ({ color }) => <TabBarIcon name="chart-line" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="two"
+        options={{ href: null }}
       />
     </Tabs>
   );

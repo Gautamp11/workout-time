@@ -7,19 +7,41 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { WorkoutProvider } from '@/context/WorkoutContext';
+import { ExerciseProvider } from '@/context/ExerciseContext';
+import Colors from '@/constants/Colors';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+const LightTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: Colors.light.tint,
+    background: Colors.light.background,
+    card: Colors.light.surface,
+    text: Colors.light.text,
+    border: Colors.light.border,
+  },
+};
+
+const DarkThemeCustom = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: Colors.dark.tint,
+    background: Colors.dark.background,
+    card: Colors.dark.surface,
+    text: Colors.dark.text,
+    border: Colors.dark.border,
+  },
+};
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -27,7 +49,6 @@ export default function RootLayout() {
     ...FontAwesome.font,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
@@ -38,21 +59,49 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
+  if (!loaded) return null;
 
-  return <RootLayoutNav />;
+  return (
+    <WorkoutProvider>
+      <ExerciseProvider>
+        <RootLayoutNav />
+      </ExerciseProvider>
+    </WorkoutProvider>
+  );
 }
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkThemeCustom : LightTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="workout/[id]"
+          options={{
+            headerShown: true,
+            title: 'Workout',
+            headerBackTitle: 'Back',
+          }}
+        />
+        <Stack.Screen
+          name="exercise/[id]"
+          options={{
+            headerShown: true,
+            title: 'Exercise',
+            headerBackTitle: 'Back',
+          }}
+        />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen
+          name="add-exercise"
+          options={{
+            presentation: 'modal',
+            title: 'Add Custom Exercise',
+            headerBackTitle: 'Cancel',
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );
