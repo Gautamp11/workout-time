@@ -16,7 +16,7 @@ export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'dark'];
-  const { addWorkoutLog } = useWorkout();
+  const { addWorkoutLog, customRoutines, getRoutineExercises, setRoutineExercises } = useWorkout();
   const { allExercises, getExercise } = useExercises();
   const [showOverview, setShowOverview] = useState(true);
   const [sessionExercises, setSessionExercises] = useState<WorkoutExercise[]>([]);
@@ -26,16 +26,18 @@ export default function WorkoutScreen() {
   const [showAddExercise, setShowAddExercise] = useState(false);
   const startTimeRef = useRef<number>(Date.now());
 
-  const routine = WORKOUT_ROUTINES.find(r => r.id === id);
+  const routines = [...WORKOUT_ROUTINES, ...customRoutines];
+  const routine = routines.find(r => r.id === id);
 
   // Reset session when routine changes
   useEffect(() => {
     if (routine) {
-      setSessionExercises([...routine.exercises]);
+      const savedExercises = getRoutineExercises(routine.id, routine.exercises);
+      setSessionExercises([...savedExercises]);
       setShowOverview(true);
       setCurrentIndex(0);
     }
-  }, [routine?.id]);
+  }, [routine, getRoutineExercises]);
 
   if (!routine) return null;
 
@@ -56,13 +58,21 @@ export default function WorkoutScreen() {
       reps: '10',
       restSeconds: 60,
     };
-    setSessionExercises(prev => [...prev, newEx]);
+    setSessionExercises(prev => {
+      const next = [...prev, newEx];
+      setRoutineExercises(routine.id, next);
+      return next;
+    });
     setShowAddExercise(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const removeExercise = (index: number) => {
-    setSessionExercises(prev => prev.filter((_, i) => i !== index));
+    setSessionExercises(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      setRoutineExercises(routine.id, next);
+      return next;
+    });
     if (currentIndex >= sessionExercises.length - 1 && currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
     }
@@ -128,40 +138,17 @@ export default function WorkoutScreen() {
             {routine.description}
           </Text>
           <Text style={[styles.overviewMeta, { color: colors.textSecondary }]}>
-            {routine.duration} • {exercisesToShow.length} exercises
+            {routine.duration} - {exercisesToShow.length} exercises
           </Text>
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.text }]}>Exercises in this workout</Text>
-        {exercisesToShow.map((we, i) => {
-          const ex = getExercise(we.exerciseId);
-          if (!ex) return null;
-          return (
-            <View
-              key={`${we.exerciseId}-${i}`}
-              style={[styles.overviewExerciseRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            >
-              <View style={styles.overviewExerciseNum}>
-                <Text style={[styles.overviewExerciseNumText, { color: colors.textSecondary }]}>
-                  {i + 1}
-                </Text>
-              </View>
-              <View style={styles.overviewExerciseInfo}>
-                <Text style={[styles.overviewExerciseName, { color: colors.text }]}>{ex.name}</Text>
-                <Text style={[styles.overviewExerciseMeta, { color: colors.textSecondary }]}>
-                  {we.sets} sets × {we.reps} • {ex.equipment}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => removeExercise(i)}
-                hitSlop={12}
-                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-              >
-                <MaterialCommunityIcons name="close-circle-outline" size={24} color={colors.danger} />
-              </Pressable>
-            </View>
-          );
-        })}
+        <Pressable
+          onPress={startWorkout}
+          style={[styles.startBtn, { backgroundColor: colors.accent }]}
+        >
+          <MaterialCommunityIcons name="play" size={24} color="#fff" />
+          <Text style={styles.startBtnText}>Start Workout</Text>
+        </Pressable>
 
         {!showAddExercise ? (
           <Pressable
@@ -181,7 +168,20 @@ export default function WorkoutScreen() {
                 <MaterialCommunityIcons name="close" size={24} color={colors.textSecondary} />
               </Pressable>
             </View>
-            <ScrollView style={styles.addExerciseList} nestedScrollEnabled>
+            <Pressable
+              onPress={() => router.push('/add-exercise')}
+              style={[styles.customExerciseBtn, { borderColor: colors.accent }]}
+            >
+              <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.accent} />
+              <Text style={[styles.customExerciseText, { color: colors.accent }]}>
+                Create custom exercise
+              </Text>
+            </Pressable>
+            <ScrollView
+              style={styles.addExerciseList}
+              contentContainerStyle={styles.addExerciseListContent}
+              nestedScrollEnabled
+            >
               {availableToAdd.map(ex => (
                 <Pressable
                   key={ex.id}
@@ -194,7 +194,7 @@ export default function WorkoutScreen() {
                 >
                   <Text style={[styles.addExerciseItemName, { color: colors.text }]}>{ex.name}</Text>
                   <Text style={[styles.addExerciseItemMeta, { color: colors.textSecondary }]}>
-                    {ex.muscleGroup} • {ex.equipment}
+                    {ex.muscleGroup} - {ex.equipment}
                   </Text>
                 </Pressable>
               ))}
@@ -207,13 +207,36 @@ export default function WorkoutScreen() {
           </View>
         )}
 
-        <Pressable
-          onPress={startWorkout}
-          style={[styles.startBtn, { backgroundColor: colors.accent }]}
-        >
-          <MaterialCommunityIcons name="play" size={24} color="#fff" />
-          <Text style={styles.startBtnText}>Start Workout</Text>
-        </Pressable>
+        <Text style={[styles.sectionLabel, { color: colors.text }]}>Exercises in this workout</Text>
+        {exercisesToShow.map((we, i) => {
+          const ex = getExercise(we.exerciseId);
+          if (!ex) return null;
+          return (
+            <View
+              key={`${we.exerciseId}-${i}`}
+              style={[styles.overviewExerciseRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            >
+              <View style={styles.overviewExerciseNum}>
+                <Text style={[styles.overviewExerciseNumText, { color: colors.textSecondary }]}>
+                  {i + 1}
+                </Text>
+              </View>
+              <View style={styles.overviewExerciseInfo}>
+                <Text style={[styles.overviewExerciseName, { color: colors.text }]}>{ex.name}</Text>
+                <Text style={[styles.overviewExerciseMeta, { color: colors.textSecondary }]}>
+                  {we.sets} sets x {we.reps} - {ex.equipment}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => removeExercise(i)}
+                hitSlop={12}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <MaterialCommunityIcons name="close-circle-outline" size={24} color={colors.danger} />
+              </Pressable>
+            </View>
+          );
+        })}
       </ScrollView>
     );
   }
@@ -246,11 +269,11 @@ export default function WorkoutScreen() {
           </View>
           <Text style={[styles.exerciseName, { color: colors.text }]}>{exercise.name}</Text>
           <Text style={[styles.exerciseMeta, { color: colors.textSecondary }]}>
-            {exercise.muscleGroup} • {exercise.equipment}
+            {exercise.muscleGroup} â€¢ {exercise.equipment}
           </Text>
           <View style={styles.setsRow}>
             <Text style={[styles.setsText, { color: colors.text }]}>
-              {currentWE.sets} sets × {currentWE.reps}
+              {currentWE.sets} sets Ã— {currentWE.reps}
             </Text>
           </View>
           <Text style={[styles.instructions, { color: colors.textSecondary }]}>
@@ -266,7 +289,7 @@ export default function WorkoutScreen() {
         >
           <MaterialCommunityIcons name="check" size={24} color="#fff" />
           <Text style={styles.primaryBtnText}>
-            {isLast ? 'Finish Workout' : 'Done → Rest'}
+            {isLast ? 'Finish Workout' : 'Done â†’ Rest'}
           </Text>
         </Pressable>
         {!isLast && (
@@ -409,7 +432,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     marginBottom: 24,
-    maxHeight: 220,
+    maxHeight: 360,
+    minHeight: 260,
   },
   addExerciseSectionHeader: {
     flexDirection: 'row',
@@ -422,7 +446,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   addExerciseList: {
-    maxHeight: 180,
+    maxHeight: 280,
+  },
+  addExerciseListContent: {
+    paddingBottom: 8,
+  },
+  customExerciseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  customExerciseText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   addExerciseItem: {
     padding: 12,
@@ -558,3 +599,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+

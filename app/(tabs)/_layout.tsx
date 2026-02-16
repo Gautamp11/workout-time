@@ -55,8 +55,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <TabBarIcon name="format-list-bulleted" color={color} />,
           headerRight: () => (
             <Link href="/add-exercise" asChild>
-              <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginRight: 16 })}>
-                <MaterialCommunityIcons name="plus" size={26} color={colors.tint} />
+              <Pressable
+                hitSlop={10}
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.85 : 1,
+                  marginRight: 12,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.accent,
+                })}
+              >
+                <MaterialCommunityIcons name="plus" size={24} color="#fff" />
               </Pressable>
             </Link>
           ),

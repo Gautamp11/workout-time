@@ -102,6 +102,14 @@ function RootLayoutNav() {
             headerBackTitle: 'Cancel',
           }}
         />
+        <Stack.Screen
+          name="add-workout"
+          options={{
+            presentation: 'modal',
+            title: 'Add Custom Workout',
+            headerBackTitle: 'Cancel',
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );
