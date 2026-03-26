@@ -1,20 +1,24 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import FontAwesome from "@expo/vector-icons/FontAwesome";
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
+import { useFonts } from "expo-font";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import "react-native-reanimated";
 
-import { useColorScheme } from '@/components/useColorScheme';
-import { WorkoutProvider } from '@/context/WorkoutContext';
-import { ExerciseProvider } from '@/context/ExerciseContext';
-import Colors from '@/constants/Colors';
+import { useColorScheme } from "@/components/useColorScheme";
+import Colors from "@/constants/Colors";
+import { ExerciseProvider } from "@/context/ExerciseContext";
+import { WorkoutProvider } from "@/context/WorkoutContext";
 
-export { ErrorBoundary } from 'expo-router';
+export { ErrorBoundary } from "expo-router";
 
 export const unstable_settings = {
-  initialRouteName: '(tabs)',
+  initialRouteName: "(tabs)",
 };
 
 SplashScreen.preventAutoHideAsync();
@@ -45,7 +49,7 @@ const DarkThemeCustom = {
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
     ...FontAwesome.font,
   });
 
@@ -74,40 +78,42 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkThemeCustom : LightTheme}>
+    <ThemeProvider
+      value={colorScheme === "dark" ? DarkThemeCustom : LightTheme}
+    >
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="workout/[id]"
           options={{
             headerShown: true,
-            title: 'Workout',
-            headerBackTitle: 'Back',
+            title: "Workout",
+            headerBackTitle: "Back",
           }}
         />
         <Stack.Screen
           name="exercise/[id]"
           options={{
             headerShown: true,
-            title: 'Exercise',
-            headerBackTitle: 'Back',
+            title: "Exercise",
+            headerBackTitle: "Back",
           }}
         />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="modal" options={{ presentation: "modal" }} />
         <Stack.Screen
           name="add-exercise"
           options={{
-            presentation: 'modal',
-            title: 'Add Custom Exercise',
-            headerBackTitle: 'Cancel',
+            presentation: "modal",
+            title: "Add Custom Exercise",
+            headerBackTitle: "Cancel",
           }}
         />
         <Stack.Screen
           name="add-workout"
           options={{
-            presentation: 'modal',
-            title: 'Add Custom Workout',
-            headerBackTitle: 'Cancel',
+            presentation: "modal",
+            title: "Add Custom Workout",
+            headerBackTitle: "Cancel",
           }}
         />
       </Stack>
