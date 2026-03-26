@@ -25,11 +25,12 @@ function formatLastSessionDate(iso: string) {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "dark"];
-  const { workoutLogs, totalWorkouts, thisWeekWorkouts } = useWorkout();
+  const { workoutLogs, totalWorkouts, thisWeekWorkouts, weeklyGoal } = useWorkout();
 
   const featuredRoutine = WORKOUT_ROUTINES[0];
   const recentRoutines = WORKOUT_ROUTINES.slice(0, 3);
   const lastWorkout = workoutLogs[0];
+  const weeklyGoalProgress = Math.min(1, thisWeekWorkouts / weeklyGoal);
 
   return (
     <ScrollView
@@ -66,6 +67,41 @@ export default function HomeScreen() {
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
             Total
           </Text>
+        </View>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(140).springify()}>
+        <View
+          style={[
+            styles.goalCard,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.goalHeader}>
+            <View>
+              <Text style={[styles.goalTitle, { color: colors.text }]}>
+                Weekly Goal
+              </Text>
+              <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
+                {thisWeekWorkouts} of {weeklyGoal} workouts
+              </Text>
+            </View>
+            <Text style={[styles.goalBadge, { color: colors.accent }]}>
+              {Math.round(weeklyGoalProgress * 100)}%
+            </Text>
+          </View>
+          <View style={[styles.goalTrack, { backgroundColor: colors.border }]}>
+            <View
+              style={[
+                styles.goalFill,
+                {
+                  backgroundColor: colors.accent,
+                  width: `${Math.max(10, weeklyGoalProgress * 100)}%`,
+                  opacity: thisWeekWorkouts > 0 ? 1 : 0.35,
+                },
+              ]}
+            />
+          </View>
         </View>
       </Animated.View>
 
@@ -203,6 +239,41 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 18,
     marginBottom: 14,
+  },
+  goalCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+  },
+  goalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 12,
+  },
+  goalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  goalMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  goalBadge: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  goalTrack: {
+    width: "100%",
+    height: 10,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  goalFill: {
+    height: "100%",
+    borderRadius: 999,
   },
   ctaText: {
     flex: 1,

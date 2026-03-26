@@ -5,6 +5,7 @@ import { WorkoutExercise, WorkoutLog, WorkoutRoutine } from '@/types';
 const STORAGE_KEY = '@workout_time_logs';
 const ROUTINE_EXERCISES_STORAGE_KEY = '@workout_time_routine_exercises';
 const CUSTOM_ROUTINES_STORAGE_KEY = '@workout_time_custom_routines';
+const WEEKLY_GOAL_STORAGE_KEY = '@workout_time_weekly_goal';
 
 interface WorkoutContextType {
   workoutLogs: WorkoutLog[];
@@ -15,6 +16,8 @@ interface WorkoutContextType {
   setRoutineExercises: (routineId: string, exercises: WorkoutExercise[]) => void;
   totalWorkouts: number;
   thisWeekWorkouts: number;
+  weeklyGoal: number;
+  setWeeklyGoal: (goal: number) => void;
 }
 
 const WorkoutContext = createContext<WorkoutContextType | undefined>(undefined);
@@ -23,24 +26,42 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
   const [customRoutines, setCustomRoutines] = useState<WorkoutRoutine[]>([]);
   const [routineExercises, setRoutineExercisesState] = useState<Record<string, WorkoutExercise[]>>({});
+  const [weeklyGoal, setWeeklyGoalState] = useState(4);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
-    loadLogs();
-    loadCustomRoutines();
-    loadRoutineExercises();
+    async function hydrate() {
+      await Promise.all([
+        loadLogs(),
+        loadCustomRoutines(),
+        loadRoutineExercises(),
+        loadWeeklyGoal(),
+      ]);
+      setHasHydrated(true);
+    }
+
+    hydrate();
   }, []);
 
   useEffect(() => {
+    if (!hasHydrated) return;
     saveLogs(workoutLogs);
-  }, [workoutLogs]);
+  }, [hasHydrated, workoutLogs]);
 
   useEffect(() => {
+    if (!hasHydrated) return;
     saveRoutineExercises(routineExercises);
-  }, [routineExercises]);
+  }, [hasHydrated, routineExercises]);
 
   useEffect(() => {
+    if (!hasHydrated) return;
     saveCustomRoutines(customRoutines);
-  }, [customRoutines]);
+  }, [hasHydrated, customRoutines]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    saveWeeklyGoal(weeklyGoal);
+  }, [hasHydrated, weeklyGoal]);
 
   const loadLogs = async () => {
     try {
@@ -77,6 +98,20 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loadWeeklyGoal = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(WEEKLY_GOAL_STORAGE_KEY);
+      if (stored) {
+        const parsed = Number(JSON.parse(stored));
+        if (Number.isFinite(parsed) && parsed > 0) {
+          setWeeklyGoalState(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load weekly goal', e);
+    }
+  };
+
   const saveRoutineExercises = async (value: Record<string, WorkoutExercise[]>) => {
     try {
       await AsyncStorage.setItem(ROUTINE_EXERCISES_STORAGE_KEY, JSON.stringify(value));
@@ -90,6 +125,14 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       await AsyncStorage.setItem(CUSTOM_ROUTINES_STORAGE_KEY, JSON.stringify(value));
     } catch (e) {
       console.warn('Failed to save custom routines', e);
+    }
+  };
+
+  const saveWeeklyGoal = async (value: number) => {
+    try {
+      await AsyncStorage.setItem(WEEKLY_GOAL_STORAGE_KEY, JSON.stringify(value));
+    } catch (e) {
+      console.warn('Failed to save weekly goal', e);
     }
   };
 
@@ -121,6 +164,10 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const setWeeklyGoal = useCallback((goal: number) => {
+    setWeeklyGoalState(goal);
+  }, []);
+
   const oneWeekAgo = new Date();
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
@@ -139,6 +186,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
         setRoutineExercises,
         totalWorkouts: workoutLogs.length,
         thisWeekWorkouts,
+        weeklyGoal,
+        setWeeklyGoal,
       }}
     >
       {children}

@@ -17,14 +17,21 @@ const ExerciseContext = createContext<ExerciseContextType | undefined>(undefined
 
 export function ExerciseProvider({ children }: { children: React.ReactNode }) {
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
-    loadExercises();
+    async function hydrate() {
+      await loadExercises();
+      setHasHydrated(true);
+    }
+
+    hydrate();
   }, []);
 
   useEffect(() => {
+    if (!hasHydrated) return;
     saveExercises(customExercises);
-  }, [customExercises]);
+  }, [hasHydrated, customExercises]);
 
   const loadExercises = async () => {
     try {

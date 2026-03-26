@@ -15,6 +15,15 @@ export interface WorkoutExercise {
   notes?: string;
 }
 
+export interface LoggedWorkoutExercise {
+  exerciseId: string;
+  exerciseName: string;
+  plannedSets: number;
+  plannedReps?: string;
+  loggedWeight?: string;
+  notes?: string;
+}
+
 export interface WorkoutRoutine {
   id: string;
   name: string;
@@ -33,4 +42,5 @@ export interface WorkoutLog {
   completedAt: string; // ISO date string
   duration: number; // minutes
   exercisesCompleted: number;
+  exerciseDetails?: LoggedWorkoutExercise[];
 }

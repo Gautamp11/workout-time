@@ -2,7 +2,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
 import { Text } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
@@ -10,7 +10,52 @@ import Colors from "@/constants/Colors";
 import { useExercises } from "@/context/ExerciseContext";
 import { useWorkout } from "@/context/WorkoutContext";
 import { WORKOUT_ROUTINES } from "@/data/routines";
-import { WorkoutExercise } from "@/types";
+import { LoggedWorkoutExercise, WorkoutExercise, WorkoutLog } from "@/types";
+
+interface SessionExerciseLog {
+  loggedWeight: string;
+  notes: string;
+}
+
+interface CompletionSummary {
+  duration: number;
+  personalRecords: Array<{
+    exerciseName: string;
+    weightLabel: string;
+  }>;
+}
+
+function formatRestLabel(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds === 0
+    ? `${minutes}m`
+    : `${minutes}m ${remainingSeconds}s`;
+}
+
+function parseLoggedWeight(weight?: string) {
+  if (!weight) return null;
+  const match = weight.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getPreviousBestWeight(logs: WorkoutLog[], exerciseId: string) {
+  let best: number | null = null;
+
+  for (const log of logs) {
+    for (const detail of log.exerciseDetails ?? []) {
+      if (detail.exerciseId !== exerciseId) continue;
+      const parsedWeight = parseLoggedWeight(detail.loggedWeight);
+      if (parsedWeight === null) continue;
+      if (best === null || parsedWeight > best) best = parsedWeight;
+    }
+  }
+
+  return best;
+}
 
 export default function WorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +66,7 @@ export default function WorkoutScreen() {
     customRoutines,
     getRoutineExercises,
     setRoutineExercises,
+    workoutLogs,
   } = useWorkout();
   const { allExercises, getExercise } = useExercises();
   const [showOverview, setShowOverview] = useState(true);
@@ -28,9 +74,10 @@ export default function WorkoutScreen() {
     [],
   );
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [restSeconds, setRestSeconds] = useState(0);
   const [isResting, setIsResting] = useState(false);
   const [showAddExercise, setShowAddExercise] = useState(false);
+  const [exerciseLogs, setExerciseLogs] = useState<Record<string, SessionExerciseLog>>({});
+  const [completionSummary, setCompletionSummary] = useState<CompletionSummary | null>(null);
   const startTimeRef = useRef<number>(Date.now());
 
   const routines = [...WORKOUT_ROUTINES, ...customRoutines];
@@ -41,6 +88,8 @@ export default function WorkoutScreen() {
     if (routine) {
       const savedExercises = getRoutineExercises(routine.id, routine.exercises);
       setSessionExercises([...savedExercises]);
+      setExerciseLogs({});
+      setCompletionSummary(null);
       setShowOverview(true);
       setCurrentIndex(0);
     }
@@ -50,9 +99,62 @@ export default function WorkoutScreen() {
 
   const currentWE = sessionExercises[currentIndex];
   const exercise = currentWE ? getExercise(currentWE.exerciseId) : null;
+  const hasExercises = sessionExercises.length > 0;
   const isLast = currentIndex >= sessionExercises.length - 1;
+  const currentExerciseKey = `${currentIndex}-${currentWE?.exerciseId ?? "unknown"}`;
+  const currentExerciseLog = exerciseLogs[currentExerciseKey] ?? {
+    loggedWeight: "",
+    notes: "",
+  };
+
+  const updateCurrentExerciseLog = (
+    field: keyof SessionExerciseLog,
+    value: string,
+  ) => {
+    setExerciseLogs((prev) => ({
+      ...prev,
+      [currentExerciseKey]: {
+        loggedWeight: prev[currentExerciseKey]?.loggedWeight ?? "",
+        notes: prev[currentExerciseKey]?.notes ?? "",
+        [field]: value,
+      },
+    }));
+  };
+
+  const buildExerciseDetails = (): LoggedWorkoutExercise[] =>
+    sessionExercises.map((sessionExercise, index) => {
+      const sessionKey = `${index}-${sessionExercise.exerciseId}`;
+      const exerciseInfo = getExercise(sessionExercise.exerciseId);
+      const sessionLog = exerciseLogs[sessionKey];
+
+      return {
+        exerciseId: sessionExercise.exerciseId,
+        exerciseName: exerciseInfo?.name ?? "Exercise",
+        plannedSets: sessionExercise.sets,
+        plannedReps: sessionExercise.reps,
+        loggedWeight: sessionLog?.loggedWeight.trim() || undefined,
+        notes: sessionLog?.notes.trim() || undefined,
+      };
+    });
+
+  const getPersonalRecords = (exerciseDetails: LoggedWorkoutExercise[]) =>
+    exerciseDetails.flatMap((detail) => {
+      const currentWeight = parseLoggedWeight(detail.loggedWeight);
+      if (currentWeight === null) return [];
+
+      const previousBest = getPreviousBestWeight(workoutLogs, detail.exerciseId);
+      if (previousBest !== null && currentWeight <= previousBest) return [];
+
+      return [
+        {
+          exerciseName: detail.exerciseName,
+          weightLabel: detail.loggedWeight ?? `${currentWeight}`,
+        },
+      ];
+    });
 
   const startWorkout = () => {
+    if (!hasExercises) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     startTimeRef.current = Date.now();
     setShowOverview(false);
@@ -86,21 +188,53 @@ export default function WorkoutScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const updateExerciseConfig = (
+    index: number,
+    updates: Partial<WorkoutExercise>,
+  ) => {
+    setSessionExercises((prev) => {
+      const next = prev.map((exercise, exerciseIndex) =>
+        exerciseIndex === index ? { ...exercise, ...updates } : exercise,
+      );
+      setRoutineExercises(routine.id, next);
+      return next;
+    });
+  };
+
+  const moveExercise = (index: number, direction: "up" | "down") => {
+    setSessionExercises((prev) => {
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      setRoutineExercises(routine.id, next);
+      return next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const finishExercise = () => {
+    if (!currentWE) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isLast) {
       const duration = Math.round((Date.now() - startTimeRef.current) / 60000);
+      const exerciseDetails = buildExerciseDetails();
+      const personalRecords = getPersonalRecords(exerciseDetails);
       addWorkoutLog({
         routineId: routine.id,
         routineName: routine.name,
         completedAt: new Date().toISOString(),
         duration,
         exercisesCompleted: sessionExercises.length,
+        exerciseDetails,
       });
-      router.back();
+      setCompletionSummary({
+        duration,
+        personalRecords,
+      });
     } else {
       setIsResting(true);
-      setRestSeconds(currentWE?.restSeconds ?? 60);
     }
   };
 
@@ -165,10 +299,19 @@ export default function WorkoutScreen() {
 
         <Pressable
           onPress={startWorkout}
-          style={[styles.startBtn, { backgroundColor: colors.accent }]}
+          disabled={!hasExercises}
+          style={[
+            styles.startBtn,
+            {
+              backgroundColor: hasExercises ? colors.accent : colors.border,
+              opacity: hasExercises ? 1 : 0.65,
+            },
+          ]}
         >
           <MaterialCommunityIcons name="play" size={24} color="#fff" />
-          <Text style={styles.startBtnText}>Start Workout</Text>
+          <Text style={styles.startBtnText}>
+            {hasExercises ? "Start Workout" : "Add an exercise to start"}
+          </Text>
         </Pressable>
 
         {!showAddExercise ? (
@@ -303,6 +446,131 @@ export default function WorkoutScreen() {
                 >
                   {we.sets} sets x {we.reps} - {ex.equipment}
                 </Text>
+                <View style={styles.editorRow}>
+                  <View
+                    style={[
+                      styles.editorGroup,
+                      { backgroundColor: colors.background, borderColor: colors.border },
+                    ]}
+                  >
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() =>
+                        updateExerciseConfig(i, { sets: Math.max(1, we.sets - 1) })
+                      }
+                      style={styles.editorButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="minus"
+                        size={18}
+                        color={colors.text}
+                      />
+                    </Pressable>
+                    <Text style={[styles.editorValue, { color: colors.text }]}>
+                      {we.sets} sets
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => updateExerciseConfig(i, { sets: we.sets + 1 })}
+                      style={styles.editorButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={18}
+                        color={colors.text}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <TextInput
+                    value={we.reps ?? ""}
+                    onChangeText={(value) => updateExerciseConfig(i, { reps: value })}
+                    placeholder="Reps"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[
+                      styles.repsInput,
+                      {
+                        backgroundColor: colors.background,
+                        borderColor: colors.border,
+                        color: colors.text,
+                      },
+                    ]}
+                  />
+
+                  <View
+                    style={[
+                      styles.restControl,
+                      { backgroundColor: colors.background, borderColor: colors.border },
+                    ]}
+                  >
+                    <Pressable
+                      onPress={() =>
+                        updateExerciseConfig(i, {
+                          restSeconds: we.restSeconds >= 15 ? we.restSeconds - 15 : 0,
+                        })
+                      }
+                      style={styles.editorButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="minus"
+                        size={18}
+                        color={colors.text}
+                      />
+                    </Pressable>
+                    <Text style={[styles.restChipText, { color: colors.text }]}>
+                      {formatRestLabel(we.restSeconds)}
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        updateExerciseConfig(i, {
+                          restSeconds: we.restSeconds + 15,
+                        })
+                      }
+                      style={styles.editorButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="plus"
+                        size={18}
+                        color={colors.text}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.rowActions}>
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => moveExercise(i, "up")}
+                  disabled={i === 0}
+                  style={({ pressed }) => [
+                    styles.iconAction,
+                    { opacity: i === 0 ? 0.35 : pressed ? 0.6 : 1 },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="chevron-up"
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </Pressable>
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => moveExercise(i, "down")}
+                  disabled={i === exercisesToShow.length - 1}
+                  style={({ pressed }) => [
+                    styles.iconAction,
+                    {
+                      opacity:
+                        i === exercisesToShow.length - 1 ? 0.35 : pressed ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="chevron-down"
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </Pressable>
               </View>
               <Pressable
                 onPress={() => removeExercise(i)}
@@ -318,6 +586,110 @@ export default function WorkoutScreen() {
             </View>
           );
         })}
+      </ScrollView>
+    );
+  }
+
+  if (completionSummary) {
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.content}
+      >
+        <View style={[styles.completionCard, { backgroundColor: colors.surface }]}>
+          <View
+            style={[
+              styles.completionIcon,
+              { backgroundColor: colors.accent + "20" },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="check-decagram"
+              size={42}
+              color={colors.accent}
+            />
+          </View>
+          <Text style={[styles.completionTitle, { color: colors.text }]}>
+            Workout complete
+          </Text>
+          <Text style={[styles.completionMeta, { color: colors.textSecondary }]}>
+            {routine.name} - {completionSummary.duration} min
+          </Text>
+
+          {completionSummary.personalRecords.length > 0 ? (
+            <View
+              style={[
+                styles.prPanel,
+                { backgroundColor: colors.accent + "14", borderColor: colors.accent + "30" },
+              ]}
+            >
+              <View style={styles.prHeader}>
+                <MaterialCommunityIcons
+                  name="trophy"
+                  size={20}
+                  color={colors.warning}
+                />
+                <Text style={[styles.prTitle, { color: colors.text }]}>
+                  New personal record
+                </Text>
+              </View>
+              {completionSummary.personalRecords.map((record) => (
+                <View key={`${record.exerciseName}-${record.weightLabel}`} style={styles.prRow}>
+                  <Text style={[styles.prExercise, { color: colors.text }]}>
+                    {record.exerciseName}
+                  </Text>
+                  <Text style={[styles.prWeight, { color: colors.accent }]}>
+                    {record.weightLabel}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.completionBody, { color: colors.textSecondary }]}>
+              Nice work. Your workout has been saved to Progress.
+            </Text>
+          )}
+
+          <Pressable
+            onPress={() => router.back()}
+            style={[styles.completionBtn, { backgroundColor: colors.accent }]}
+          >
+            <Text style={styles.completionBtnText}>Done</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  if (!currentWE || !exercise) {
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.content}
+      >
+        <View
+          style={[styles.emptyStateCard, { backgroundColor: colors.surface }]}
+        >
+          <MaterialCommunityIcons
+            name="dumbbell"
+            size={42}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
+            This workout needs at least one exercise
+          </Text>
+          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+            Go back to the overview and add an exercise before starting.
+          </Text>
+          <Pressable
+            onPress={() => setShowOverview(true)}
+            style={[styles.secondaryBtn, { borderColor: colors.border }]}
+          >
+            <Text style={[styles.secondaryBtnText, { color: colors.text }]}>
+              Back to Overview
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     );
   }
@@ -368,6 +740,45 @@ export default function WorkoutScreen() {
               {currentWE.sets} sets x {currentWE.reps}
             </Text>
           </View>
+          <View style={styles.loggingSection}>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+              Weight used
+            </Text>
+            <TextInput
+              value={currentExerciseLog.loggedWeight}
+              onChangeText={(value) => updateCurrentExerciseLog("loggedWeight", value)}
+              placeholder="e.g. 20 kg or bodyweight"
+              placeholderTextColor={colors.textSecondary}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
+            />
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+              Notes
+            </Text>
+            <TextInput
+              value={currentExerciseLog.notes}
+              onChangeText={(value) => updateCurrentExerciseLog("notes", value)}
+              placeholder="Optional form or performance note"
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              textAlignVertical="top"
+              style={[
+                styles.input,
+                styles.notesInput,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
+            />
+          </View>
           <Text style={[styles.instructions, { color: colors.textSecondary }]}>
             {exercise.instructions}
           </Text>
@@ -414,25 +825,33 @@ function RestTimer({
   colors: typeof import("@/constants/Colors").default.dark;
 }) {
   const [seconds, setSeconds] = useState(initialSeconds);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const deadlineRef = useRef(Date.now() + initialSeconds * 1000);
+  const completedRef = useRef(false);
 
   useEffect(() => {
-    let t: ReturnType<typeof setInterval> | null = null;
-    if (seconds > 0) {
-      t = setInterval(() => {
-        setSeconds((s) => {
-          if (s <= 1) {
-            if (t) clearInterval(t);
-            onComplete();
-            return 0;
-          }
-          return s - 1;
-        });
-      }, 1000);
-    }
+    deadlineRef.current = Date.now() + initialSeconds * 1000;
+    completedRef.current = false;
+    setSeconds(initialSeconds);
+
+    intervalRef.current = setInterval(() => {
+      const remainingMs = deadlineRef.current - Date.now();
+      const nextSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      setSeconds(nextSeconds);
+
+      if (remainingMs <= 0 && !completedRef.current) {
+        completedRef.current = true;
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        onComplete();
+      }
+    }, 250);
+
     return () => {
-      if (t) clearInterval(t);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
     };
-  }, []);
+  }, [initialSeconds, onComplete]);
 
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -519,6 +938,65 @@ const styles = StyleSheet.create({
   overviewExerciseInfo: { flex: 1, minWidth: 0, marginRight: 8 },
   overviewExerciseName: { fontSize: 15, fontWeight: "600" },
   overviewExerciseMeta: { fontSize: 12, marginTop: 2 },
+  editorRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+  editorGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    minHeight: 40,
+  },
+  editorButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowActions: {
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  iconAction: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editorValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    minWidth: 56,
+    textAlign: "center",
+  },
+  repsInput: {
+    minWidth: 74,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  restControl: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    minHeight: 40,
+  },
+  restChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    minWidth: 54,
+    textAlign: "center",
+  },
   addExerciseBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -581,6 +1059,99 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: 16,
   },
+  emptyStateCard: {
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    gap: 12,
+  },
+  completionCard: {
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+  },
+  completionIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+  completionTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  completionMeta: {
+    fontSize: 14,
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  completionBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  prPanel: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+  },
+  prHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  prTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  prRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 6,
+  },
+  prExercise: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  prWeight: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  completionBtn: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    marginTop: 4,
+  },
+  completionBtnText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  emptyStateText: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: 8,
+  },
   startBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -642,6 +1213,27 @@ const styles = StyleSheet.create({
   setsText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  loggingSection: {
+    width: "100%",
+    marginTop: 18,
+    gap: 8,
+  },
+  inputLabel: {
+    alignSelf: "flex-start",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  input: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  notesInput: {
+    minHeight: 84,
   },
   instructions: {
     fontSize: 14,
